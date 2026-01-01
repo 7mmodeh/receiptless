@@ -1,13 +1,13 @@
+import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
   Alert,
-  View,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
+  View,
 } from "react-native";
-import { useRouter } from "expo-router";
 import { CONFIG } from "../src/config";
 
 export default function Claim() {

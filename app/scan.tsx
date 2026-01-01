@@ -1,46 +1,62 @@
-import { useEffect, useState } from "react";
-import { Alert, View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useRouter } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
+import { Button, StyleSheet, Text, View } from "react-native";
 
-function extractTokenId(data: string): string | null {
+function extractTokenId(scanned: string): string | null {
+  const s = (scanned || "").trim();
+
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  // Direct UUID
+  if (UUID_RE.test(s)) return s;
+
+  // URL with uuid at end (e.g. https://receipt-less.com/r/<uuid>)
   try {
-    const u = new URL(data);
+    const u = new URL(s);
     const parts = u.pathname.split("/").filter(Boolean);
-    const rIndex = parts.indexOf("r");
-    if (rIndex >= 0 && parts[rIndex + 1]) return parts[rIndex + 1];
-    if (parts.length === 1) return parts[0];
+    const last = parts[parts.length - 1] || "";
+    if (UUID_RE.test(last)) return last;
   } catch {
-    const maybeUuid = data.trim();
-    if (maybeUuid.length >= 32) return maybeUuid;
+    // Not a URL
   }
+
   return null;
 }
 
-export default function Scan() {
+export default function ScanScreen() {
   const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
+
   const [scanned, setScanned] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const hasPermission = useMemo(
+    () => permission?.granted === true,
+    [permission]
+  );
 
   useEffect(() => {
-    if (!permission) requestPermission();
+    if (!permission) return;
+    if (!permission.granted) requestPermission();
   }, [permission, requestPermission]);
 
   if (!permission) {
     return (
       <View style={styles.center}>
-        <Text>Requesting camera permission…</Text>
+        <Text>Checking camera permission…</Text>
       </View>
     );
   }
 
-  if (!permission.granted) {
+  if (!hasPermission) {
     return (
       <View style={styles.center}>
-        <Text style={{ marginBottom: 12 }}>Camera permission denied.</Text>
-        <TouchableOpacity style={styles.button} onPress={requestPermission}>
-          <Text style={styles.buttonText}>Grant Permission</Text>
-        </TouchableOpacity>
+        <Text style={{ fontWeight: "700", marginBottom: 10 }}>
+          Camera permission is required to scan.
+        </Text>
+        <Button title="Grant permission" onPress={() => requestPermission()} />
       </View>
     );
   }
@@ -52,34 +68,46 @@ export default function Scan() {
         barcodeScannerSettings={{
           barcodeTypes: ["qr"],
         }}
-        onBarcodeScanned={({ data }) => {
+        onBarcodeScanned={(result) => {
           if (scanned) return;
-          setScanned(true);
 
-          const tokenId = extractTokenId(data);
+          const raw = String(result?.data ?? "").trim();
+          const tokenId = extractTokenId(raw);
+
           if (!tokenId) {
-            Alert.alert(
-              "Invalid QR",
-              "Could not read a receipt token from this QR."
-            );
-            setScanned(false);
+            setScanned(true);
+            setErr("Unrecognized QR. Expected a Receiptless token.");
             return;
           }
 
-          router.push(`/r/${tokenId}`);
+          setErr(null);
+          setScanned(true);
+          router.replace(`/r/${tokenId}`);
         }}
       />
 
-      {scanned && (
-        <View style={styles.bottomBar}>
-          <TouchableOpacity
-            onPress={() => setScanned(false)}
-            style={styles.button}
-          >
-            <Text style={styles.buttonText}>Tap to Scan Again</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      <View style={styles.overlay}>
+        <Text style={styles.overlayTitle}>Scan Receiptless QR</Text>
+        <Text style={styles.overlayHint}>
+          Point the camera at the QR code. We accept:
+          {"\n"}- https://receipt-less.com/r/&lt;token_id&gt;
+          {"\n"}- token UUID directly
+        </Text>
+
+        {err ? <Text style={styles.err}>{err}</Text> : null}
+
+        {scanned ? (
+          <View style={{ marginTop: 10 }}>
+            <Button
+              title="Scan again"
+              onPress={() => {
+                setScanned(false);
+                setErr(null);
+              }}
+            />
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -91,7 +119,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 20,
   },
-  bottomBar: { position: "absolute", bottom: 24, left: 16, right: 16 },
-  button: { backgroundColor: "#111", padding: 14, borderRadius: 12 },
-  buttonText: { color: "white", textAlign: "center", fontWeight: "600" },
+  overlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: 16,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  overlayTitle: { color: "white", fontSize: 16, fontWeight: "800" },
+  overlayHint: { color: "white", marginTop: 6, opacity: 0.9 },
+  err: { color: "white", marginTop: 10, fontWeight: "700" },
 });

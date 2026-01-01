@@ -1,7 +1,7 @@
 import { Link } from "expo-router";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-export default function Home() {
+export default function Index() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Receiptless</Text>

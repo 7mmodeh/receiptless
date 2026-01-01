@@ -9,7 +9,8 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mohd.receiptless"
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +20,21 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.mohd.receiptless",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [{ "scheme": "receiptless" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "output": "static",
@@ -38,7 +53,8 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "expo-camera"
     ],
     "experiments": {
       "typedRoutes": true,
