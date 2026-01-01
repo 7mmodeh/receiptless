@@ -5,9 +5,12 @@ import React, { useEffect, useMemo, useState } from "react";
 
 type Props = {
   open: boolean;
-  token: string; // your opaque token (uuid or short token)
-  domain: string; // e.g. "receipt-less.com" or "r.receipt-less.com"
+  token: string;
+  domain: string; // e.g. "r.receipt-less.com" or "receipt-less.com"
   onClose: () => void;
+
+  // Branding
+  logoUrl: string; // e.g. "https://receipt-less.com/brand/receiptless-logo.png"
   title?: string;
 };
 
@@ -23,14 +26,80 @@ function buildReceiptUrl(domain: string, token: string) {
   return `https://${cleanDomain}/r/${encodeURIComponent(cleanToken)}`;
 }
 
-async function makeQrDataUrl(receiptUrl: string) {
-  // PNG DataURL
-  return QRCode.toDataURL(receiptUrl, {
+async function loadImageAsDataUrl(url: string): Promise<string> {
+  // Loads an image URL into a data URL so QR code can embed it reliably.
+  // Requires the logo to be served with proper CORS if hosted on another domain.
+  const res = await fetch(url, { cache: "force-cache" });
+  if (!res.ok) throw new Error(`Logo fetch failed (${res.status})`);
+  const blob = await res.blob();
+
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Logo read failed"));
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function makeBrandedQrDataUrl(receiptUrl: string, logoDataUrl: string) {
+  // 1) Generate QR to an offscreen canvas
+  const canvas = document.createElement("canvas");
+  await QRCode.toCanvas(canvas, receiptUrl, {
     errorCorrectionLevel: "M",
     width: 300,
     margin: 2,
-    type: "image/png",
+    color: { dark: "#000000", light: "#FFFFFF" },
   });
+
+  // 2) Draw logo in center with white background pad
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas not supported");
+
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = () => reject(new Error("Logo decode failed"));
+    i.src = logoDataUrl;
+  });
+
+  const size = canvas.width; // 300
+  const logoSize = 54; // safe for 300px QR (≈18%)
+  const pad = 10;
+
+  const x = Math.round((size - logoSize) / 2);
+  const y = Math.round((size - logoSize) / 2);
+
+  // White rounded background behind logo
+  const r = 10;
+  ctx.save();
+  ctx.fillStyle = "#FFFFFF";
+  roundRect(ctx, x - pad, y - pad, logoSize + pad * 2, logoSize + pad * 2, r);
+  ctx.fill();
+  ctx.restore();
+
+  // Draw logo
+  ctx.drawImage(img, x, y, logoSize, logoSize);
+
+  // 3) Export as PNG DataURL
+  return canvas.toDataURL("image/png");
+}
+
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
 }
 
 export function ReceiptlessQrModal({
@@ -38,6 +107,7 @@ export function ReceiptlessQrModal({
   token,
   domain,
   onClose,
+  logoUrl,
   title = "Scan to save your receipt",
 }: Props) {
   const receiptUrl = useMemo(
@@ -57,7 +127,8 @@ export function ReceiptlessQrModal({
 
     (async () => {
       try {
-        const dataUrl = await makeQrDataUrl(receiptUrl);
+        const logoDataUrl = await loadImageAsDataUrl(logoUrl);
+        const dataUrl = await makeBrandedQrDataUrl(receiptUrl, logoDataUrl);
         if (!alive) return;
         setState({ status: "ready", dataUrl, receiptUrl });
       } catch (e: unknown) {
@@ -67,21 +138,19 @@ export function ReceiptlessQrModal({
       }
     })();
 
-    const t = window.setTimeout(onClose, 12000); // auto-close
+    const t = window.setTimeout(onClose, 12000);
     return () => {
       alive = false;
       window.clearTimeout(t);
     };
-  }, [open, receiptUrl, onClose]);
+  }, [open, receiptUrl, logoUrl, onClose]);
 
   if (!open) return null;
-
-  const close = () => onClose();
 
   return (
     <div
       style={styles.backdrop}
-      onClick={close}
+      onClick={onClose}
       role="dialog"
       aria-modal="true"
     >
@@ -106,10 +175,10 @@ export function ReceiptlessQrModal({
 
         {state.status === "error" ? (
           <div style={styles.errorBox}>
-            <div style={{ fontWeight: 800 }}>Unable to generate QR</div>
+            <div style={{ fontWeight: 900 }}>Unable to generate branded QR</div>
             <div style={{ marginTop: 6, opacity: 0.9 }}>{state.message}</div>
             <div style={{ marginTop: 10 }}>
-              <a href={state.receiptUrl} style={styles.link}>
+              <a href={receiptUrl} style={styles.link}>
                 Open receipt link
               </a>
             </div>
@@ -118,7 +187,7 @@ export function ReceiptlessQrModal({
 
         <div style={styles.url}>{receiptUrl}</div>
 
-        <button style={styles.btn} onClick={close}>
+        <button style={styles.btn} onClick={onClose}>
           Done
         </button>
       </div>
@@ -183,7 +252,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   link: {
     color: "#111827",
-    fontWeight: 800,
+    fontWeight: 900,
     textDecoration: "underline",
   },
 };
